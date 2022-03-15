@@ -190,6 +190,10 @@ read_attribute(extent_migrate_done);
 read_attribute(extent_migrate_raced);
 read_attribute(bucket_alloc_fail);
 
+read_attribute(move_moves);
+read_attribute(move_reads);
+read_attribute(move_writes);
+
 rw_attribute(discard);
 rw_attribute(label);
 
@@ -377,6 +381,12 @@ SHOW(bch2_fs)
 		    atomic_long_read(&c->extent_migrate_raced));
 	sysfs_print(bucket_alloc_fail,
 		    atomic_long_read(&c->bucket_alloc_fail));
+	sysfs_print(move_moves,
+		    atomic64_read(&c->move_moves));
+	sysfs_print(move_reads,
+		    atomic64_read(&c->move_reads));
+	sysfs_print(move_writes,
+		    atomic64_read(&c->move_writes));
 
 	sysfs_printf(btree_gc_periodic, "%u",	(int) c->btree_gc_periodic);
 
@@ -574,6 +584,9 @@ struct attribute *bch2_fs_internal_files[] = {
 	&sysfs_extent_migrate_done,
 	&sysfs_extent_migrate_raced,
 	&sysfs_bucket_alloc_fail,
+	&sysfs_move_moves,
+	&sysfs_move_reads,
+	&sysfs_move_writes,
 
 	&sysfs_gc_gens_pos,
 

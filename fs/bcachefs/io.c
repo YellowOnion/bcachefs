@@ -25,6 +25,8 @@
 #include "io.h"
 #include "journal.h"
 #include "keylist.h"
+#include "linux/atomic/atomic-instrumented.h"
+#include "linux/bio.h"
 #include "move.h"
 #include "rebalance.h"
 #include "subvolume.h"
@@ -1288,6 +1290,7 @@ void bch2_write(struct closure *cl)
 		goto err;
 	}
 
+    atomic64_add(bio_sectors(bio), &c->move_writes);
 	bch2_increment_clock(c, bio_sectors(bio), WRITE);
 
 	data_len = min_t(u64, bio->bi_iter.bi_size,
@@ -2194,6 +2197,7 @@ get_bio:
 	if (rbio->bounce)
 		trace_read_bounce(&rbio->bio);
 
+    atomic64_add(bio_sectors(&rbio->bio), &c->move_reads);
 	bch2_increment_clock(c, bio_sectors(&rbio->bio), READ);
 
 	/*
