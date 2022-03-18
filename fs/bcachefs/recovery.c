@@ -1268,9 +1268,12 @@ use_clean:
 		if (ret)
 			goto err;
 		bch_verbose(c, "done checking backpointers to extents");
+
+		set_bit(BCH_FS_CHECK_BACKPOINTERS_DONE, &c->flags);
 	} else {
 		set_bit(BCH_FS_INITIAL_GC_DONE, &c->flags);
 		set_bit(BCH_FS_CHECK_LRUS_DONE, &c->flags);
+		set_bit(BCH_FS_CHECK_BACKPOINTERS_DONE, &c->flags);
 		set_bit(BCH_FS_MAY_GO_RW, &c->flags);
 	}
 

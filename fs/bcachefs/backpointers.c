@@ -211,10 +211,13 @@ btree:
 		pr_buf(&buf, "for ");
 		bch2_bkey_val_to_text(&buf, c, orig_k);
 
-		bch2_trans_inconsistent(trans, "%s", buf.buf);
+		if (!test_bit(BCH_FS_CHECK_BACKPOINTERS_DONE, &c->flags)) {
+			bch_err(c, "%s", buf.buf);
+		} else {
+			ret = -EIO;
+			bch2_trans_inconsistent(trans, "%s", buf.buf);
+		}
 		printbuf_exit(&buf);
-
-		ret = -EIO;
 		goto err;
 	}
 
