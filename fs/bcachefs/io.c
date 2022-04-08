@@ -1290,7 +1290,7 @@ void bch2_write(struct closure *cl)
 		goto err;
 	}
 
-    atomic64_add(bio_sectors(bio), &c->move_writes);
+	atomic64_add(bio_sectors(bio), &c->counters[BCH_COUNTER_io_write]);
 	bch2_increment_clock(c, bio_sectors(bio), WRITE);
 
 	data_len = min_t(u64, bio->bi_iter.bi_size,
@@ -2197,7 +2197,8 @@ get_bio:
 	if (rbio->bounce)
 		trace_read_bounce(&rbio->bio);
 
-    atomic64_add(bio_sectors(&rbio->bio), &c->move_reads);
+	atomic64_add(bio_sectors(&rbio->bio), &c->counters[BCH_COUNTER_io_read]);
+
 	bch2_increment_clock(c, bio_sectors(&rbio->bio), READ);
 
 	/*

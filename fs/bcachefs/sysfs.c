@@ -190,9 +190,9 @@ read_attribute(extent_migrate_done);
 read_attribute(extent_migrate_raced);
 read_attribute(bucket_alloc_fail);
 
-read_attribute(move_moves);
-read_attribute(move_reads);
-read_attribute(move_writes);
+#define x(t, n, ...) read_attribute(t);
+BCH_PERSISTENT_COUNTERS()
+#undef x
 
 rw_attribute(discard);
 rw_attribute(label);
@@ -381,12 +381,9 @@ SHOW(bch2_fs)
 		    atomic_long_read(&c->extent_migrate_raced));
 	sysfs_print(bucket_alloc_fail,
 		    atomic_long_read(&c->bucket_alloc_fail));
-	sysfs_print(move_moves,
-		    atomic64_read(&c->move_moves));
-	sysfs_print(move_reads,
-		    atomic64_read(&c->move_reads));
-	sysfs_print(move_writes,
-		    atomic64_read(&c->move_writes));
+
+	#define x(t, ...) sysfs_print(counter_##t, \
+			atomic64_read(&c->counters[BCH_COUNTER_##t]));
 
 	sysfs_printf(btree_gc_periodic, "%u",	(int) c->btree_gc_periodic);
 

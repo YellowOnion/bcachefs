@@ -31,6 +31,8 @@ const char * const bch2_sb_fields[] = {
 static int bch2_sb_field_validate(struct bch_sb *, struct bch_sb_field *,
 				  struct printbuf *);
 
+static int bch2_sb_counters_to_cpu(struct bch_fs *c);
+
 struct bch_sb_field *bch2_sb_field_get(struct bch_sb *sb,
 				      enum bch_sb_field_type type)
 {
@@ -464,6 +466,10 @@ int bch2_sb_to_fs(struct bch_fs *c, struct bch_sb *src)
 	if (ret)
 		return ret;
 
+	ret = bch2_sb_counters_to_cpu(c);
+	if (ret)
+		return ret;
+
 	bch2_sb_update(c);
 	return 0;
 }
@@ -484,6 +490,9 @@ int bch2_sb_from_fs(struct bch_fs *c, struct bch_dev *ca)
 		return ret;
 
 	__copy_super(&ca->disk_sb, src);
+
+	bch2_sb_counters_from_cpu(c);
+
 	return 0;
 }
 
@@ -1064,6 +1073,87 @@ static void bch2_sb_members_to_text(struct printbuf *out, struct bch_sb *sb,
 static const struct bch_sb_field_ops bch_sb_field_ops_members = {
 	.validate	= bch2_sb_members_validate,
 	.to_text	= bch2_sb_members_to_text,
+};
+
+/* BCH_SB_FIELD_counters */
+
+
+const char * const bch2_counter_names[] = {
+#define x(t, n, ...) #t,
+	BCH_PERSISTENT_COUNTERS()
+#undef x
+	NULL
+};
+
+static size_t bch2_sb_counter_nr_entries (struct bch_sb_field_counters *ctrs)
+{
+	if (!ctrs)
+		return 0;
+
+	return (__le64 *) vstruct_end(&ctrs->field) - &ctrs->d[0];
+};
+
+static int bch2_sb_counters_validate(struct bch_sb *sb,
+                               struct bch_sb_field *f,
+                               struct printbuf *err)
+{
+	return 0;
+};
+
+void bch2_sb_counters_to_text(struct printbuf *out, struct bch_sb *sb,
+			      struct bch_sb_field *f)
+{
+	struct bch_sb_field_counters *ctrs = field_to_type(f, counters);
+	unsigned i;
+	unsigned nr = bch2_sb_counter_nr_entries(ctrs);
+
+	for (i = 0; i < nr; i++) {
+		if ( i < BCH_COUNTER_NR) {
+			pr_buf(out, "%s", bch2_counter_names[i]);
+		}
+		else {
+			pr_buf(out, "(unknown)");
+		}
+		pr_tab(out);
+		pr_buf(out, "%llu", le64_to_cpu(ctrs->d[i]));
+		pr_newline(out);
+	};
+};
+
+static int bch2_sb_counters_to_cpu(struct bch_fs *c)
+{
+	struct bch_sb_field_counters *ctrs = bch2_sb_get_counters(c->disk_sb.sb);
+	unsigned i;
+	unsigned nr = bch2_sb_counter_nr_entries(ctrs);
+
+	for (i = 0; i < min_t(unsigned, nr, BCH_COUNTER_NR); i++) {
+		atomic64_set(&c->counters[i], le64_to_cpu(ctrs->d[i]));
+	}
+	return 0;
+};
+
+static int bch2_sb_counters_from_cpu(struct bch_fs *c)
+{
+	struct bch_sb_field_counters *ctrs = bch2_sb_get_counters(c->disk_sb.sb);
+	unsigned i;
+	unsigned nr = bch2_sb_counter_nr_entries(ctrs);
+
+	if (nr < BCH_COUNTER_NR) {
+		ctrs = bch2_sb_resize_counters(&c->disk_sb, sizeof(*ctrs) / sizeof(u64) + BCH_COUNTER_NR);
+		if (!ctrs) {
+			return -ENOSPC;
+		}
+	}
+
+	for (i = 0; i < BCH_COUNTER_NR; i++) {
+		ctrs->d[i] = cpu_to_le64(atomic64_read(&c->counters[i]));
+	}
+
+}
+
+static const struct bch_sb_field_ops bch_sb_field_ops_counters = {
+	.validate	= bch2_sb_counters_validate,
+	.to_text	= bch2_sb_counters_to_text,
 };
 
 /* BCH_SB_FIELD_crypt: */

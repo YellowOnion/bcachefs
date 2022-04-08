@@ -1050,7 +1050,8 @@ struct bch_sb_field {
 	x(clean,	6)			\
 	x(replicas,	7)			\
 	x(journal_seq_blacklist, 8)		\
-	x(journal_v2,	9)
+	x(journal_v2,	9)			\
+	x(counters,	10)
 
 enum bch_sb_field_type {
 #define x(f, nr)	BCH_SB_FIELD_##f = nr,
@@ -1256,6 +1257,31 @@ struct bch_sb_field_disk_groups {
 	struct bch_sb_field	field;
 	struct bch_disk_group	entries[0];
 } __attribute__((packed, aligned(8)));
+
+/* BCH_SB_FIELD_counters */
+
+enum unit_types {
+     bytes,
+     events,
+     time,
+};
+
+#define BCH_PERSISTENT_COUNTERS()			\
+	x(extent_move,  0, bytes, "")			\
+	x(io_read,  1, bytes, "")			\
+	x(io_write, 2, bytes, "")
+
+enum bch_persistent_counters {
+#define x(t, n, ...) BCH_COUNTER_##t,
+        BCH_PERSISTENT_COUNTERS()
+#undef x
+	BCH_COUNTER_NR
+};
+
+struct bch_sb_field_counters {
+	struct bch_sb_field	field;
+	__le64 			d[0];
+};
 
 /*
  * On clean shutdown, store btree roots and current journal sequence number in

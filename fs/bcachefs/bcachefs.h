@@ -893,14 +893,13 @@ struct bch_fs {
 
 	u64			last_bucket_seq_cleanup;
 
-	/* The rest of this all shows up in sysfs */
+	/* TODO rewrite as counters - The rest of this all shows up in sysfs */
 	atomic_long_t		read_realloc_races;
 	atomic_long_t		extent_migrate_done;
 	atomic_long_t		extent_migrate_raced;
 	atomic_long_t		bucket_alloc_fail;
-	atomic64_t          move_moves;
-	atomic64_t          move_reads;
-	atomic64_t          move_writes;
+
+	atomic64_t counters[BCH_COUNTER_NR];
 
 	unsigned		btree_gc_periodic:1;
 	unsigned		copy_gc_enabled:1;
