@@ -1284,13 +1284,25 @@ use_clean:
 		if (ret)
 			goto err;
 		bch_verbose(c, "done checking backpointers to extents");
-
 		set_bit(BCH_FS_CHECK_BACKPOINTERS_DONE, &c->flags);
+
+		bch_info(c, "checking alloc to lru refs");
+		err = "error checking alloc to lru refs";
+		ret = bch2_check_alloc_to_lru_refs(c);
+		if (ret)
+			goto err;
+		set_bit(BCH_FS_CHECK_ALLOC_TO_LRU_REFS_DONE, &c->flags);
+
+		ret = bch2_check_lrus(c, true);
+		if (ret)
+			goto err;
+		bch_verbose(c, "done checking alloc to lru refs");
 	} else {
 		set_bit(BCH_FS_MAY_GO_RW, &c->flags);
 		set_bit(BCH_FS_INITIAL_GC_DONE, &c->flags);
 		set_bit(BCH_FS_CHECK_LRUS_DONE, &c->flags);
 		set_bit(BCH_FS_CHECK_BACKPOINTERS_DONE, &c->flags);
+		set_bit(BCH_FS_CHECK_ALLOC_TO_LRU_REFS_DONE, &c->flags);
 		set_bit(BCH_FS_FSCK_DONE, &c->flags);
 
 		if (c->opts.norecovery)
@@ -1309,19 +1321,6 @@ use_clean:
 	ret = bch2_fs_freespace_init(c);
 	if (ret)
 		goto err;
-
-	if (c->opts.fsck) {
-		bch_info(c, "checking alloc to lru refs");
-		err = "error checking alloc to lru refs";
-		ret = bch2_check_alloc_to_lru_refs(c);
-		if (ret)
-			goto err;
-
-		ret = bch2_check_lrus(c, true);
-		if (ret)
-			goto err;
-		bch_verbose(c, "done checking alloc to lru refs");
-	}
 
 	if (c->sb.version < bcachefs_metadata_version_snapshot_2) {
 		bch2_fs_lazy_rw(c);
