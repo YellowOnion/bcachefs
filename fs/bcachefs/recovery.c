@@ -1096,6 +1096,12 @@ int bch2_fs_recovery(struct bch_fs *c)
 		}
 	}
 
+	if (c->opts.fsck && c->opts.norecovery) {
+		bch_err(c, "cannot select both norecovery and fsck");
+		ret = -EINVAL;
+		goto err;
+	}
+
 	ret = bch2_blacklist_table_initialize(c);
 	if (ret) {
 		bch_err(c, "error initializing blacklist table");
@@ -1189,6 +1195,13 @@ use_clean:
 	if (ret)
 		goto err;
 
+	/*
+	 * Skip past versions that might have possibly been used (as nonces),
+	 * but hadn't had their pointers written:
+	 */
+	if (c->sb.encryption_type && !c->sb.clean)
+		atomic64_add(1 << 16, &c->key_version);
+
 	ret = read_btree_roots(c);
 	if (ret)
 		goto err;
@@ -1211,12 +1224,7 @@ use_clean:
 		goto err;
 	bch_verbose(c, "stripes_read done");
 
-	/*
-	 * If we're not running fsck, this ensures bch2_fsck_err() calls are
-	 * instead interpreted as bch2_inconsistent_err() calls:
-	 */
-	if (!c->opts.fsck)
-		set_bit(BCH_FS_FSCK_DONE, &c->flags);
+	bch2_stripes_heap_start(c);
 
 	if (c->opts.fsck) {
 		bool metadata_only = c->opts.norecovery;
@@ -1238,6 +1246,14 @@ use_clean:
 		bch_verbose(c, "done checking need_discard and freespace btrees");
 
 		set_bit(BCH_FS_MAY_GO_RW, &c->flags);
+
+		bch_verbose(c, "starting journal replay, %zu keys", c->journal_keys.nr);
+		err = "journal replay failed";
+		ret = bch2_journal_replay(c);
+		if (ret)
+			goto err;
+		if (c->opts.verbose || !c->sb.clean)
+			bch_info(c, "journal replay done");
 
 		bch_info(c, "checking lrus");
 		err = "error checking lrus";
@@ -1271,31 +1287,23 @@ use_clean:
 
 		set_bit(BCH_FS_CHECK_BACKPOINTERS_DONE, &c->flags);
 	} else {
+		set_bit(BCH_FS_MAY_GO_RW, &c->flags);
 		set_bit(BCH_FS_INITIAL_GC_DONE, &c->flags);
 		set_bit(BCH_FS_CHECK_LRUS_DONE, &c->flags);
 		set_bit(BCH_FS_CHECK_BACKPOINTERS_DONE, &c->flags);
-		set_bit(BCH_FS_MAY_GO_RW, &c->flags);
+		set_bit(BCH_FS_FSCK_DONE, &c->flags);
+
+		if (c->opts.norecovery)
+			goto out;
+
+		bch_verbose(c, "starting journal replay, %zu keys", c->journal_keys.nr);
+		err = "journal replay failed";
+		ret = bch2_journal_replay(c);
+		if (ret)
+			goto err;
+		if (c->opts.verbose || !c->sb.clean)
+			bch_info(c, "journal replay done");
 	}
-
-	bch2_stripes_heap_start(c);
-
-	/*
-	 * Skip past versions that might have possibly been used (as nonces),
-	 * but hadn't had their pointers written:
-	 */
-	if (c->sb.encryption_type && !c->sb.clean)
-		atomic64_add(1 << 16, &c->key_version);
-
-	if (c->opts.norecovery)
-		goto out;
-
-	bch_verbose(c, "starting journal replay, %zu keys", c->journal_keys.nr);
-	err = "journal replay failed";
-	ret = bch2_journal_replay(c);
-	if (ret)
-		goto err;
-	if (c->opts.verbose || !c->sb.clean)
-		bch_info(c, "journal replay done");
 
 	err = "error initializing freespace";
 	ret = bch2_fs_freespace_init(c);
