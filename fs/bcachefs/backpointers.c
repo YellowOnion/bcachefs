@@ -113,6 +113,9 @@ static int bch2_backpointer_del_by_offset(struct btree_trans *trans,
 		}
 
 		a = bch2_alloc_to_v4_mut(trans, k);
+		ret = PTR_ERR_OR_ZERO(a);
+		if (ret)
+			goto err;
 		bps = alloc_v4_backpointers(&a->v);
 		nr = BCH_ALLOC_V4_NR_BACKPOINTERS(&a->v);
 
