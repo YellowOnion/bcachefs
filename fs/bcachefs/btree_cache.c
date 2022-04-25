@@ -332,7 +332,7 @@ static unsigned long bch2_btree_cache_scan(struct shrinker *shrink,
 restart:
 	list_for_each_entry_safe(b, t, &bc->live, list) {
 		/* tweak this */
-		if (btree_node_accessed(b)) {
+		if (btree_node_accessed(b) && touched < nr) {
 			clear_btree_node_accessed(b);
 			goto touched;
 		}
@@ -364,7 +364,7 @@ restart:
 touched:
 		touched++;
 
-		if (touched >= nr) {
+		if (touched >= nr * 2) {
 			/* Save position */
 			if (&t->list != &bc->live)
 				list_move_tail(&bc->live, &t->list);
