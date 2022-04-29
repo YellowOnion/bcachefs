@@ -70,7 +70,7 @@ void bch2_pointer_to_bucket_and_backpointer(struct bch_fs *c,
 
 static inline struct bpos backpointer_pos(struct bch_fs *c,
 					  struct bpos alloc_pos,
-					  unsigned bucket_offset)
+					  u64 bucket_offset)
 {
 	struct bch_dev *ca = bch_dev_bkey_exists(c, alloc_pos.inode);
 
