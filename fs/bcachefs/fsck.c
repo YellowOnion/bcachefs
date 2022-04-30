@@ -1189,7 +1189,7 @@ static int check_extent_start(struct btree_trans *trans,
 
 	darray_for_each(*extent_ends, i) {
 		if (fsck_err_on(i->offset > bkey_start_offset(k.k) &&
-				key_visible_in_snapshot(c, s, ), c,
+				key_visible_in_snapshot(c, s, i->snapshot, k.k->p.snapshot), c,
 				"overlapping extents: extent in snapshot %u ends at %llu overlaps with\n%s",
 				(printbuf_reset(&buf),
 				 bch2_bkey_val_to_text(&buf, c, k), buf.buf))) {
