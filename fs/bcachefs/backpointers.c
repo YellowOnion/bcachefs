@@ -2,6 +2,7 @@
 #include "bcachefs.h"
 #include "alloc_background.h"
 #include "backpointers.h"
+#include "btree_cache.h"
 #include "btree_update.h"
 #include "error.h"
 
@@ -361,7 +362,6 @@ int bch2_get_next_backpointer(struct btree_trans *trans,
 			      struct bch_backpointer *dst)
 {
 	struct bch_fs *c = trans->c;
-	struct bch_dev *ca = bch_dev_bkey_exists(c, dev);
 	struct bpos alloc_pos = POS(dev, bucket);
 	struct bpos bp_pos =
 		backpointer_pos(c, alloc_pos,
@@ -684,8 +684,6 @@ static int check_extent_to_backpointers(struct btree_trans *trans,
 	struct bkey_ptrs_c ptrs;
 	const union bch_extent_entry *entry;
 	struct extent_ptr_decoded p;
-	struct bpos bucket_pos;
-	struct bch_backpointer bp;
 	struct bkey_s_c k;
 	int ret;
 
@@ -698,6 +696,9 @@ static int check_extent_to_backpointers(struct btree_trans *trans,
 
 	ptrs = bch2_bkey_ptrs_c(k);
 	bkey_for_each_ptr_decode(k.k, ptrs, p, entry) {
+		struct bpos bucket_pos;
+		struct bch_backpointer bp;
+
 		if (p.ptr.cached)
 			continue;
 
@@ -709,25 +710,49 @@ static int check_extent_to_backpointers(struct btree_trans *trans,
 			return ret;
 	}
 
-	/* check root */
-	if (!btree_path_node(iter->path, iter->path->level + 1) &&
-	    !bpos_cmp(k.k->p, SPOS_MAX)) {
-		k = bkey_i_to_s_c(&path_l(iter->path)->b->key);
-		ptrs = bch2_bkey_ptrs_c(k);
-		bkey_for_each_ptr_decode(k.k, ptrs, p, entry) {
-			if (p.ptr.cached)
-				continue;
-
-			bch2_pointer_to_bucket_and_backpointer(c, iter->btree_id, iter->path->level + 1,
-							       k, p, &bucket_pos, &bp);
-
-			ret = backpointer_check(trans, bucket_pos, bp, k);
-			if (ret)
-				return ret;
-		}
-	}
-
 	return 0;
+}
+
+static int check_btree_root_to_backpointers(struct btree_trans *trans,
+					    enum btree_id btree_id)
+{
+	struct bch_fs *c = trans->c;
+	struct btree_iter iter;
+	struct btree *b;
+	struct bkey_s_c k;
+	struct bkey_ptrs_c ptrs;
+	struct extent_ptr_decoded p;
+	const union bch_extent_entry *entry;
+	int ret;
+
+	bch2_trans_node_iter_init(trans, &iter, btree_id, POS_MIN, 0,
+				  c->btree_roots[btree_id].level, 0);
+	b = bch2_btree_iter_peek_node(&iter);
+	ret = PTR_ERR_OR_ZERO(b);
+	if (ret)
+		goto err;
+
+	BUG_ON(b != btree_node_root(c, b));
+
+	k = bkey_i_to_s_c(&b->key);
+	ptrs = bch2_bkey_ptrs_c(k);
+	bkey_for_each_ptr_decode(k.k, ptrs, p, entry) {
+		struct bpos bucket_pos;
+		struct bch_backpointer bp;
+
+		if (p.ptr.cached)
+			continue;
+
+		bch2_pointer_to_bucket_and_backpointer(c, iter.btree_id, iter.path->level + 1,
+						       k, p, &bucket_pos, &bp);
+
+		ret = backpointer_check(trans, bucket_pos, bp, k);
+		if (ret)
+			goto err;
+	}
+err:
+	bch2_trans_iter_exit(trans, &iter);
+	return ret;
 }
 
 int bch2_check_extents_to_backpointers(struct bch_fs *c)
@@ -740,7 +765,7 @@ int bch2_check_extents_to_backpointers(struct bch_fs *c)
 	bch2_trans_init(&trans, c, 0, 0);
 	for (btree_id = 0; btree_id < BTREE_ID_NR; btree_id++) {
 		bch2_trans_node_iter_init(&trans, &iter, btree_id, POS_MIN, 0,
-					  btree_type_has_ptrs(btree_id) ? 0 : 1,
+					  0,
 					  BTREE_ITER_ALL_LEVELS|
 					  BTREE_ITER_PREFETCH);
 
@@ -754,6 +779,16 @@ int bch2_check_extents_to_backpointers(struct bch_fs *c)
 		} while (!bch2_btree_iter_advance(&iter));
 
 		bch2_trans_iter_exit(&trans, &iter);
+
+		if (ret)
+			break;
+
+		ret = __bch2_trans_do(&trans, NULL, NULL,
+				      BTREE_INSERT_LAZY_RW|
+				      BTREE_INSERT_NOFAIL,
+				      check_btree_root_to_backpointers(&trans, btree_id));
+		if (ret)
+			break;
 	}
 	bch2_trans_exit(&trans);
 	return ret;
