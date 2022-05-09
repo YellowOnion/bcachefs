@@ -1171,6 +1171,39 @@ fsck_err:
 	return ret;
 }
 
+static int check_extent_start_early(struct btree_trans *trans,
+			      extent_ends *extent_ends,
+			      struct bkey_s_c k,
+			      struct btree_iter *iter)
+{
+	struct bch_fs *c = trans->c;
+	struct extent_end *i;
+	struct printbuf buf = PRINTBUF;
+	int ret = 0;
+
+	darray_for_each(*extent_ends, i) {
+		if (fsck_err_on(i->offset > bkey_start_offset(k.k) &&
+				i->snapshot != k.k->p.snapshot, c,
+				"overlapping extents: extent in snapshot %u ends at %llu overlaps with\n%s",
+				i->snapshot,
+				i->offset,
+				(printbuf_reset(&buf),
+				 bch2_bkey_val_to_text(&buf, c, k), buf.buf))) {
+			struct bkey_i *update = bch2_trans_kmalloc(trans, bkey_bytes(k.k));
+			if ((ret = PTR_ERR_OR_ZERO(update)))
+				goto err;
+			bkey_reassemble(update, k);
+			ret = bch2_trans_update_extent(trans, iter, update, 0);
+			if (!ret)
+				goto err;
+		}
+	}
+err:
+fsck_err:
+	printbuf_exit(&buf);
+	return ret;
+}
+
 static int check_extent(struct btree_trans *trans, struct btree_iter *iter,
 			struct inode_walker *inode,
 			struct snapshots_seen *s,
@@ -1291,6 +1324,44 @@ fsck_err:
 	return ret;
 }
 
+static int check_extent_early(struct btree_trans *trans, struct btree_iter *iter,
+			extent_ends *extent_ends)
+{
+	struct bch_fs *c = trans->c;
+	struct bkey_s_c k;
+	struct inode_walker_entry *i;
+	struct printbuf buf = PRINTBUF;
+	int ret = 0;
+
+	k = bch2_btree_iter_peek(iter);
+	if (!k.k)
+		goto out;
+
+	ret = bkey_err(k);
+	if (ret)
+		goto err;
+
+	if (k.k->type == KEY_TYPE_whiteout)
+		goto out;
+
+	ret = 0;
+
+	ret = check_extent_start_early(trans, extent_ends, k, iter);
+	if (ret)
+		goto err;
+
+	ret = extent_ends_at(extent_ends, k);
+	if (ret)
+		goto err;
+out:
+err:
+	printbuf_exit(&buf);
+
+	if (ret && ret != -EINTR)
+		bch_err(c, "error %i from check_extent_overlap()", ret);
+	return ret;
+}
+
 /*
  * Walk extents: verify that extents have a corresponding S_ISREG inode, and
  * that i_size an i_sectors are consistent
@@ -1329,6 +1400,41 @@ static int check_extents(struct bch_fs *c)
 	inode_walker_exit(&w);
 	bch2_trans_exit(&trans);
 	snapshots_seen_exit(&s);
+
+	if (ret)
+		bch_err(c, "error %i from check_extents()", ret);
+	return ret;
+}
+
+noinline_for_stack
+int bch2_check_extents_early(struct bch_fs *c)
+{
+	struct btree_trans trans;
+	struct btree_iter iter;
+	extent_ends extent_ends = { 0 };
+	int ret = 0;
+
+	bch2_trans_init(&trans, c, BTREE_ITER_MAX, 0);
+
+	bch_verbose(c, "checking extents early");
+
+	bch2_trans_iter_init(&trans, &iter, BTREE_ID_extents,
+			     POS(BCACHEFS_ROOT_INO, 0),
+			     BTREE_ITER_INTENT|
+			     BTREE_ITER_PREFETCH|
+			     BTREE_ITER_ALL_SNAPSHOTS);
+
+	do {
+		ret = __bch2_trans_do(&trans, NULL, NULL,
+				      BTREE_INSERT_LAZY_RW|
+				      BTREE_INSERT_NOFAIL,
+			check_extent_early(&trans, &iter, &extent_ends));
+		if (ret)
+			break;
+	} while (bch2_btree_iter_advance(&iter));
+	bch2_trans_iter_exit(&trans, &iter);
+	darray_exit(&extent_ends);
+	bch2_trans_exit(&trans);
 
 	if (ret)
 		bch_err(c, "error %i from check_extents()", ret);

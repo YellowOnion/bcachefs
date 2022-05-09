@@ -1264,6 +1264,14 @@ use_clean:
 
 		set_bit(BCH_FS_CHECK_LRUS_DONE, &c->flags);
 
+		bch_info(c, "checking for overlapping extents");
+
+		err = "error checking for overlapping extents";
+		ret = bch2_check_extents_early(c);
+		if (ret)
+			goto err;
+		bch_verbose(c, "done checking for overlapping extents");
+
 		bch_info(c, "checking backpointers to alloc keys");
 		err = "error checking backpointers to alloc keys";
 		ret = bch2_check_backpointers(c);
