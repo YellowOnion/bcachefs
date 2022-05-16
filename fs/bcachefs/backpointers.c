@@ -465,6 +465,9 @@ struct bkey_s_c bch2_backpointer_get_key(struct btree_trans *trans,
 	}
 
 	pr_buf(&buf, "backpointer doesn't match extent it points to:\n  ");
+	pr_buf(&buf, "bucket ");
+	bch2_bpos_to_text(&buf, alloc_pos);
+	pr_buf(&buf, "\n  ");
 	bch2_backpointer_to_text(&buf, &bp);
 	pr_buf(&buf, "\n  ");
 	bch2_bkey_val_to_text(&buf, c, k);
