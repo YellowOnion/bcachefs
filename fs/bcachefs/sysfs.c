@@ -203,6 +203,7 @@ rw_attribute(label);
 
 rw_attribute(copy_gc_enabled);
 read_attribute(copy_gc_wait);
+read_attribute(copy_gc_work);
 
 rw_attribute(rebalance_enabled);
 sysfs_pd_controller_attribute(rebalance);
@@ -398,6 +399,9 @@ SHOW(bch2_fs)
 	sysfs_hprint(copy_gc_wait,
 		     max(0LL, c->copygc_wait -
 			 atomic64_read(&c->io_clock[WRITE].now)) << 9);
+
+	copygc_heap *h = &c->copygc_heap;
+	sysfs_printf(copy_gc_work, "%lu buckets", h->used);
 
 	if (attr == &sysfs_rebalance_work)
 		bch2_rebalance_work_to_text(out, c);
@@ -632,6 +636,7 @@ struct attribute *bch2_fs_internal_files[] = {
 
 	&sysfs_copy_gc_enabled,
 	&sysfs_copy_gc_wait,
+	&sysfs_copy_gc_work,
 
 	&sysfs_rebalance_enabled,
 	&sysfs_rebalance_work,
