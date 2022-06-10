@@ -882,9 +882,39 @@ int bch2_move_data(struct bch_fs *c,
 	return ret;
 }
 
+static int verify_bucket_evacuated(struct btree_trans *trans, struct bpos bucket, int gen)
+{
+	struct bch_fs *c = trans->c;
+	struct btree_iter iter;
+	struct bkey_s_c k;
+	int ret;
+
+	bch2_trans_iter_init(trans, &iter, BTREE_ID_alloc,
+			     bucket, BTREE_ITER_CACHED);
+	k = bch2_btree_iter_peek_slot(&iter);
+	ret = bkey_err(k);
+
+	if (!ret && k.k->type == KEY_TYPE_alloc_v4) {
+		struct bkey_s_c_alloc_v4 a = bkey_s_c_to_alloc_v4(k);
+
+		if (a.v->gen == gen &&
+		    a.v->dirty_sectors) {
+			struct printbuf buf = PRINTBUF;
+
+			prt_str(&buf, "failed to evacuate bucket ");
+			bch2_bkey_val_to_text(&buf, c, k);
+
+			bch_err_ratelimited(c, "%s", buf.buf);
+			printbuf_exit(&buf);
+		}
+	}
+
+	bch2_trans_iter_exit(trans, &iter);
+	return ret;
+}
+
 int bch2_evacuate_bucket(struct bch_fs *c,
-			 struct bch_dev *ca,
-			 u64 bucket, int gen,
+			 struct bpos bucket, int gen,
 			 struct bch_ratelimit *rate,
 			 struct write_point_specifier wp,
 			 enum data_cmd data_cmd,
@@ -912,19 +942,20 @@ int bch2_evacuate_bucket(struct bch_fs *c,
 	while (!(ret = move_ratelimit(&trans, &ctxt, rate))) {
 		bch2_trans_begin(&trans);
 
-		ret = bch2_get_next_backpointer(&trans, ca->dev_idx, bucket, gen,
+		ret = bch2_get_next_backpointer(&trans, bucket, gen,
 						&bp_offset, &bp);
 		if (ret == -EINTR)
 			continue;
-		if (ret || bp_offset == U64_MAX)
+		if (ret)
+			goto err;
+		if (bp_offset == U64_MAX)
 			break;
 
 		if (!bp.level) {
 			struct bkey_s_c k;
 
 			k = bch2_backpointer_get_key(&trans, &iter,
-					POS(ca->dev_idx, bucket),
-					bp_offset, bp);
+						bucket, bp_offset, bp);
 			ret = bkey_err(k);
 			if (ret == -EINTR)
 				continue;
@@ -942,7 +973,7 @@ int bch2_evacuate_bucket(struct bch_fs *c,
 				continue;
 
 			data_opts->target	= io_opts.background_target;
-			data_opts->rewrite_dev	= ca->dev_idx;
+			data_opts->rewrite_dev	= bucket.inode;
 
 			ret = bch2_move_extent(&trans, &ctxt, wp, io_opts, bp.btree_id, k,
 						data_cmd, *data_opts);
@@ -963,8 +994,7 @@ int bch2_evacuate_bucket(struct bch_fs *c,
 			struct btree *b;
 
 			b = bch2_backpointer_get_node(&trans, &iter,
-					POS(ca->dev_idx, bucket),
-					bp_offset, bp);
+						bucket, bp_offset, bp);
 			ret = PTR_ERR_OR_ZERO(b);
 			if (ret == -EINTR)
 				continue;
@@ -988,6 +1018,13 @@ int bch2_evacuate_bucket(struct bch_fs *c,
 		}
 
 		bp_offset++;
+	}
+
+	if (IS_ENABLED(CONFIG_BCACHEFS_DEBUG) && gen >= 0) {
+		bch2_trans_unlock(&trans);
+		move_ctxt_wait_event(&ctxt, NULL, list_empty(&ctxt.reads));
+		closure_sync(&ctxt.cl);
+		lockrestart_do(&trans, verify_bucket_evacuated(&trans, bucket, gen));
 	}
 err:
 	bch2_trans_exit(&trans);

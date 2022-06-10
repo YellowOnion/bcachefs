@@ -131,9 +131,7 @@ static int bch2_copygc(struct bch_fs *c)
 		BUG_ON(!heap_pop(h, e, -fragmentation_cmp, NULL));
 		/* not correct w.r.t. device removal */
 
-		ca = bch_dev_bkey_exists(c, e.dev);
-
-		ret = bch2_evacuate_bucket(c, ca, e.bucket, e.gen, NULL,
+		ret = bch2_evacuate_bucket(c, POS(e.dev, e.bucket), e.gen, NULL,
 					   writepoint_ptr(&c->copygc_write_point),
 					   DATA_REWRITE, &data_opts,
 					   &move_stats);

@@ -62,9 +62,7 @@ int bch2_move_data(struct bch_fs *,
 		   move_pred_fn, void *,
 		   struct bch_move_stats *);
 
-int bch2_evacuate_bucket(struct bch_fs *,
-			 struct bch_dev *,
-			 u64, int,
+int bch2_evacuate_bucket(struct bch_fs *, struct bpos, int,
 			 struct bch_ratelimit *,
 			 struct write_point_specifier,
 			 enum data_cmd,
