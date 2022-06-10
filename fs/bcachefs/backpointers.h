@@ -16,9 +16,9 @@ void bch2_backpointer_swab(struct bkey_s);
 	.swab		= bch2_backpointer_swab,	\
 }
 
-void bch2_pointer_to_bucket_and_backpointer(struct bch_fs *, enum btree_id, unsigned,
-				 struct bkey_s_c, struct extent_ptr_decoded,
-				 struct bpos *, struct bch_backpointer *);
+void bch2_extent_ptr_to_bp(struct bch_fs *, enum btree_id, unsigned,
+			   struct bkey_s_c, struct extent_ptr_decoded,
+			   struct bpos *, struct bch_backpointer *);
 
 int bch2_bucket_backpointer_del(struct btree_trans *, struct bkey_i_alloc_v4 *,
 				struct bch_backpointer, struct bkey_s_c);

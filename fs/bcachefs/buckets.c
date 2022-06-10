@@ -1371,7 +1371,7 @@ static int bch2_trans_mark_pointer(struct btree_trans *trans,
 	s64 sectors;
 	int ret;
 
-	bch2_pointer_to_bucket_and_backpointer(trans->c, btree_id, level, k, p, &bucket_pos, &bp);
+	bch2_extent_ptr_to_bp(trans->c, btree_id, level, k, p, &bucket_pos, &bp);
 	sectors = bp.bucket_len;
 	if (!insert)
 		sectors = -sectors;
