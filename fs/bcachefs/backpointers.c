@@ -406,10 +406,11 @@ err:
 int bch2_get_next_backpointer(struct btree_trans *trans,
 			      struct bpos bucket, int gen,
 			      u64 *bp_offset,
-			      struct bch_backpointer *dst)
+			      struct bch_backpointer *dst,
+			      struct bpos *bp_pos_ret)
 {
 	struct bch_fs *c = trans->c;
-	struct bpos bp_pos =
+	struct bpos bp_start_pos =
 		bucket_pos_to_bp(c, bucket,
 				max(*bp_offset, BACKPOINTER_OFFSET_MAX) - BACKPOINTER_OFFSET_MAX);
 	struct bpos bp_end_pos =
@@ -438,21 +439,50 @@ int bch2_get_next_backpointer(struct btree_trans *trans,
 		if (alloc_v4_backpointers_c(a.v)[i].bucket_offset < *bp_offset)
 			continue;
 
+		*bp_pos_ret = POS_MIN;
 		*dst = alloc_v4_backpointers_c(a.v)[i];
 		*bp_offset = dst->bucket_offset;
 		goto out;
 	}
 
 	for_each_btree_key(trans, bp_iter, BTREE_ID_backpointers,
-			   bp_pos, 0, k, ret) {
-		if (bpos_cmp(k.k->p, bp_end_pos) >= 0)
+			   bp_start_pos, 0, k, ret) {
+		struct bpos bp_pos_calculated;
+
+		BUG_ON(bpos_cmp(bp_pos_to_bucket(c, k.k->p), bucket) < 0);
+		BUG_ON(bpos_cmp(k.k->p, bp_end_pos) < 0 &&
+		       bpos_cmp(bp_pos_to_bucket(c, k.k->p), bucket));
+
+		if (bpos_cmp(bp_pos_to_bucket(c, k.k->p), bucket))
 			break;
 
 		if (k.k->type != KEY_TYPE_backpointer)
 			continue;
 
+		*bp_pos_ret = k.k->p;
 		*dst = *bkey_s_c_to_backpointer(k).v;
 		*bp_offset = dst->bucket_offset + BACKPOINTER_OFFSET_MAX;
+
+		bp_pos_calculated = bucket_pos_to_bp(c, bucket,
+					      *bp_offset - BACKPOINTER_OFFSET_MAX);
+
+		if (bpos_cmp(k.k->p, bp_pos_calculated)) {
+			struct printbuf buf = PRINTBUF;
+
+			prt_str(&buf, "bp pos mismatch:");
+			prt_str(&buf, "\ncalculated: ");
+			bch2_bpos_to_text(&buf, bp_pos_calculated);;
+			prt_str(&buf, "\nreal:       ");
+			bch2_bpos_to_text(&buf, k.k->p);
+
+			prt_str(&buf, "\nstart: ");
+			bch2_bpos_to_text(&buf, bp_start_pos);
+			prt_str(&buf, "\nend:   ");
+			bch2_bpos_to_text(&buf, bp_end_pos);
+
+			pr_err("%s", buf.buf);
+			printbuf_exit(&buf);
+		}
 		goto out;
 	}
 done:
@@ -467,6 +497,7 @@ static void backpointer_not_found(struct btree_trans *trans,
 				  struct bpos bucket,
 				  u64 bp_offset,
 				  struct bch_backpointer bp,
+				  struct bpos bp_pos_real,
 				  struct bkey_s_c k,
 				  const char *thing_it_points_to)
 {
@@ -483,8 +514,12 @@ static void backpointer_not_found(struct btree_trans *trans,
 		struct bpos bp_pos =
 			bucket_pos_to_bp(c, bucket,
 					bp_offset - BACKPOINTER_OFFSET_MAX);
-		prt_printf(&buf, "backpointer pos: ");
+		prt_printf(&buf, "calculated backpointer pos: ");
 		bch2_bpos_to_text(&buf, bp_pos);
+		prt_printf(&buf, "\n  ");
+
+		prt_printf(&buf, "real backpointer pos: ");
+		bch2_bpos_to_text(&buf, bp_pos_real);
 		prt_printf(&buf, "\n  ");
 	}
 
@@ -503,7 +538,8 @@ struct bkey_s_c bch2_backpointer_get_key(struct btree_trans *trans,
 					 struct btree_iter *iter,
 					 struct bpos bucket,
 					 u64 bp_offset,
-					 struct bch_backpointer bp)
+					 struct bch_backpointer bp,
+					 struct bpos bp_pos)
 {
 	struct bch_fs *c = trans->c;
 	struct bkey_s_c k;
@@ -526,7 +562,7 @@ struct bkey_s_c bch2_backpointer_get_key(struct btree_trans *trans,
 	if (extent_matches_bp(c, bp.btree_id, bp.level, k, bucket, bp))
 		return k;
 
-	backpointer_not_found(trans, bucket, bp_offset, bp, k, "extent");
+	backpointer_not_found(trans, bucket, bp_offset, bp, bp_pos, k, "extent");
 
 	bch2_trans_iter_exit(trans, iter);
 	return bkey_s_c_null;
@@ -536,7 +572,8 @@ struct btree *bch2_backpointer_get_node(struct btree_trans *trans,
 					struct btree_iter *iter,
 					struct bpos bucket,
 					u64 bp_offset,
-					struct bch_backpointer bp)
+					struct bch_backpointer bp,
+					struct bpos bp_pos)
 {
 	struct bch_fs *c = trans->c;
 	struct btree *b;
@@ -563,7 +600,7 @@ struct btree *bch2_backpointer_get_node(struct btree_trans *trans,
 
 	if (!btree_node_will_make_reachable(b))
 		backpointer_not_found(trans, bucket, bp_offset,
-				      bp, k, "btree node");
+				      bp, bp_pos, k, "btree node");
 
 	bch2_trans_iter_exit(trans, iter);
 	return NULL;
@@ -836,14 +873,15 @@ static int check_one_backpointer(struct btree_trans *trans,
 	struct bch_backpointer bp;
 	struct bkey_s_c k;
 	struct printbuf buf = PRINTBUF;
+	struct bpos bp_pos;
 	int ret;
 
 	ret = bch2_get_next_backpointer(trans, bucket, -1,
-					bp_offset, &bp);
+					bp_offset, &bp, &bp_pos);
 	if (ret || *bp_offset == U64_MAX)
 		return ret;
 
-	k = bch2_backpointer_get_key(trans, &iter, bucket, *bp_offset, bp);
+	k = bch2_backpointer_get_key(trans, &iter, bucket, *bp_offset, bp, bp_pos);
 	ret = bkey_err(k);
 	if (ret)
 		return ret;

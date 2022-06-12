@@ -940,10 +940,12 @@ int bch2_evacuate_bucket(struct bch_fs *c,
 	stats->data_type = BCH_DATA_user;
 
 	while (!(ret = move_ratelimit(&trans, &ctxt, rate))) {
+		struct bpos bp_pos = POS_MIN;
+
 		bch2_trans_begin(&trans);
 
 		ret = bch2_get_next_backpointer(&trans, bucket, gen,
-						&bp_offset, &bp);
+						&bp_offset, &bp, &bp_pos);
 		if (ret == -EINTR)
 			continue;
 		if (ret)
@@ -955,7 +957,7 @@ int bch2_evacuate_bucket(struct bch_fs *c,
 			struct bkey_s_c k;
 
 			k = bch2_backpointer_get_key(&trans, &iter,
-						bucket, bp_offset, bp);
+						bucket, bp_offset, bp, bp_pos);
 			ret = bkey_err(k);
 			if (ret == -EINTR)
 				continue;
@@ -994,7 +996,7 @@ int bch2_evacuate_bucket(struct bch_fs *c,
 			struct btree *b;
 
 			b = bch2_backpointer_get_node(&trans, &iter,
-						bucket, bp_offset, bp);
+						bucket, bp_offset, bp, bp_pos);
 			ret = PTR_ERR_OR_ZERO(b);
 			if (ret == -EINTR)
 				continue;
