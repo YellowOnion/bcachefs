@@ -425,6 +425,10 @@ int bch2_get_next_backpointer(struct btree_trans *trans,
 			     bucket, BTREE_ITER_CACHED);
 	k = bch2_btree_iter_peek_slot(&alloc_iter);
 	ret = bkey_err(k);
+
+	if (ret == -EINTR)
+		goto out;
+
 	if (ret)
 		goto done;
 
