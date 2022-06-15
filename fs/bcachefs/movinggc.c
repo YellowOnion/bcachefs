@@ -183,10 +183,11 @@ static int bch2_copygc_thread(void *arg)
 	struct bch_fs *c = arg;
 	struct io_clock *clock = &c->io_clock[WRITE];
 	u64 last, wait;
+	int ret = 0;
 
 	set_freezable();
 
-	while (!kthread_should_stop()) {
+	while (!ret && !kthread_should_stop()) {
 		cond_resched();
 
 		if (kthread_wait_freezable(c->copy_gc_enabled))
@@ -205,8 +206,11 @@ static int bch2_copygc_thread(void *arg)
 
 		c->copygc_wait = 0;
 
-		if (bch2_copygc(c))
-			break;
+		c->copygc_running = true;
+		ret = bch2_copygc(c);
+		c->copygc_running = false;
+
+		wake_up(&c->copygc_running_wq);
 	}
 
 	return 0;
@@ -250,4 +254,6 @@ int bch2_copygc_start(struct bch_fs *c)
 
 void bch2_fs_copygc_init(struct bch_fs *c)
 {
+	init_waitqueue_head(&c->copygc_running_wq);
+	c->copygc_running = false;
 }
