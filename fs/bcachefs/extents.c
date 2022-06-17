@@ -1086,6 +1086,7 @@ int bch2_bkey_ptrs_invalid(const struct bch_fs *c, struct bkey_s_c k,
 	struct bch_extent_crc_unpacked crc;
 	unsigned size_ondisk = k.k->size;
 	unsigned nonce = UINT_MAX;
+	unsigned nr_ptrs = 0;
 	int ret;
 
 	if (bkey_is_btree_ptr(k.k))
@@ -1110,6 +1111,7 @@ int bch2_bkey_ptrs_invalid(const struct bch_fs *c, struct bkey_s_c k,
 						 false, err);
 			if (ret)
 				return ret;
+			nr_ptrs++;
 			break;
 		case BCH_EXTENT_ENTRY_crc32:
 		case BCH_EXTENT_ENTRY_crc64:
@@ -1146,6 +1148,11 @@ int bch2_bkey_ptrs_invalid(const struct bch_fs *c, struct bkey_s_c k,
 		case BCH_EXTENT_ENTRY_stripe_ptr:
 			break;
 		}
+	}
+
+	if (nr_ptrs >= BCH_BKEY_PTRS_MAX) {
+		prt_str(err, "too many ptrs");
+		return -EINVAL;
 	}
 
 	return 0;
