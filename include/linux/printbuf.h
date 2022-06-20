@@ -32,6 +32,10 @@
  * Since no equivalent yet exists for GFP_ATOMIC/GFP_NOWAIT, memory allocations
  * will be done with GFP_NOWAIT if printbuf->atomic is nonzero.
  *
+ * It's allowed to grab the output buffer and free it later with kfree() instead
+ * of using printbuf_exit(), if the user just needs a heap allocated string at
+ * the end.
+ *
  * Memory allocation failures: We don't return errors directly, because on
  * memory allocation failure we usually don't want to bail out and unwind - we
  * want to print what we've got, on a best-effort basis. But code that does want

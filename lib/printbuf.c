@@ -33,6 +33,11 @@ int printbuf_make_room(struct printbuf *out, unsigned extra)
 		return 0;
 
 	new_size = roundup_pow_of_two(out->size + extra);
+
+	/*
+	 * Note: output buffer must be freeable with kfree(), it's not required
+	 * that the user use printbuf_exit().
+	 */
 	buf = krealloc(out->buf, new_size, !out->atomic ? GFP_KERNEL : GFP_NOWAIT);
 
 	if (!buf) {
