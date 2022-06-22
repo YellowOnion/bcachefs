@@ -190,11 +190,12 @@ unsigned long bch2_copygc_wait_amount(struct bch_fs *c)
 
 	for_each_rw_member(ca, c, dev_idx) {
 		struct bch_dev_usage usage = bch2_dev_usage_read(ca);
-
-		fragmented_allowed = ((__dev_buckets_available(ca, usage, RESERVE_none) *
-				       ca->mi.bucket_size) >> 1);
+		s64 buckets_available = __dev_buckets_available(ca, usage, RESERVE_none);
+		fragmented_allowed = ((buckets_available *
+				       ca->mi.bucket_size) >> 1) ?: ca->mi.bucket_size;
 		fragmented = usage.d[BCH_DATA_user].fragmented;
 
+		bch_verbose(c,"%u: %lli %lli %lli",dev_idx, buckets_available, fragmented_allowed, fragmented);
 		wait = min(wait, max(0LL, fragmented_allowed - fragmented));
 	}
 
