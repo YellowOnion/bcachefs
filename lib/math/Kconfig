@@ -15,3 +15,14 @@ config PRIME_NUMBERS
 
 config RATIONAL
 	tristate
+
+config STATS
+       tristate "fast integer statistics module"
+       help
+	 This option provides functions for calculating mean and standard
+      	 deviation, both standard and expotentially weighted variants"
+
+config STATS_UNIT_TEST
+       tristate "statitics unit tests" if !KUNIT_ALL_TESTS
+       depends on STATS && KUNIT
+       default KUNIT_ALL_TESTS
