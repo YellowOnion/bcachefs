@@ -2,6 +2,7 @@
 #ifndef _BCACHEFS_UTIL_H
 #define _BCACHEFS_UTIL_H
 
+#include "linux/stats.h"
 #include <linux/bio.h>
 #include <linux/blkdev.h>
 #include <linux/closure.h>
@@ -377,15 +378,14 @@ struct time_stat_buffer {
 
 struct time_stats {
 	spinlock_t	lock;
-	u64		count;
 	/* all fields are in nanoseconds */
-	u64		average_duration;
 	u64		average_frequency;
 	u64		variance_duration;
 	u64		max_duration;
 	u64		last_event;
 	struct quantiles quantiles;
 
+	struct mean_and_variance	  duration_stats;
 	struct time_stat_buffer __percpu *buffer;
 };
 
