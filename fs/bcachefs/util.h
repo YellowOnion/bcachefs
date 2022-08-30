@@ -380,12 +380,12 @@ struct time_stats {
 	spinlock_t	lock;
 	/* all fields are in nanoseconds */
 	u64		average_frequency;
-	u64		variance_duration;
 	u64		max_duration;
 	u64		last_event;
 	struct quantiles quantiles;
 
 	struct mean_and_variance	  duration_stats;
+	struct mean_and_variance_ewm      duration_stats_ewm;
 	struct time_stat_buffer __percpu *buffer;
 };
 

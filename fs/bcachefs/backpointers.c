@@ -12,7 +12,7 @@
  * Convert from pos in backpointer btree to pos of corresponding bucket in alloc
  * btree:
  */
-static inline struct bpos bp_pos_to_bucket(const struct bch_fs *c,
+inline struct bpos bp_pos_to_bucket(const struct bch_fs *c,
 					   struct bpos bp_pos)
 {
 	struct bch_dev *ca = bch_dev_bkey_exists(c, bp_pos.inode);
@@ -439,6 +439,10 @@ int bch2_get_next_backpointer(struct btree_trans *trans,
 			continue;
 
 		*dst = alloc_v4_backpointers_c(a.v)[i];
+
+		if (bpos_cmp(bp_pos_to_bucket(c, dst->pos), bucket))
+			BUG();
+
 		*bp_offset = dst->bucket_offset;
 		goto out;
 	}
@@ -452,6 +456,10 @@ int bch2_get_next_backpointer(struct btree_trans *trans,
 			continue;
 
 		*dst = *bkey_s_c_to_backpointer(k).v;
+
+		if (bpos_cmp(bp_pos_to_bucket(c, dst->pos), bucket))
+			BUG();
+
 		*bp_offset = dst->bucket_offset + BACKPOINTER_OFFSET_MAX;
 		goto out;
 	}
