@@ -201,7 +201,7 @@ bool program_hpd_filter(const struct dc_link *link)
 		 * also see intermittent i2c read issues.
 		 */
 		delay_on_connect_in_ms = 80;
-		delay_on_disconnect_in_ms = 0;
+		delay_on_disconnect_in_ms = 25;
 		break;
 	case SIGNAL_TYPE_LVDS:
 	case SIGNAL_TYPE_EDP:
