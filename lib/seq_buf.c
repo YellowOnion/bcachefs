@@ -432,7 +432,7 @@ void seq_buf_human_readable_u64(struct seq_buf *s, u64 v)
 {
 	char *buf;
 	size_t size = seq_buf_get_buf(s, &buf);
-	int wrote = string_get_size(v, 1, false, buf, size);
+	int wrote = string_get_size(v, 1, STRING_UNITS_10, buf, size);
 
 	seq_buf_commit(s, wrote);
 }
