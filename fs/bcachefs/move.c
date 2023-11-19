@@ -495,21 +495,13 @@ int bch2_move_ratelimit(struct moving_context *ctxt)
 		delay = ctxt->rate ? bch2_ratelimit_delay(ctxt->rate) : 0;
 
 
-		if (delay) {
-			if (delay > HZ / 10)
-				bch2_trans_unlock_long(ctxt->trans);
-			else
-				bch2_trans_unlock(ctxt->trans);
-			set_current_state(TASK_INTERRUPTIBLE);
-		}
-
 		if ((current->flags & PF_KTHREAD) && kthread_should_stop()) {
 			__set_current_state(TASK_RUNNING);
 			return 1;
 		}
 
 		if (delay)
-			schedule_timeout(delay);
+			move_ctxt_wait_event_timeout(ctxt, false, delay);
 
 		if (unlikely(freezing(current))) {
 			move_ctxt_wait_event(ctxt, list_empty(&ctxt->reads));
