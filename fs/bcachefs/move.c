@@ -484,7 +484,7 @@ int bch2_move_ratelimit(struct moving_context *ctxt)
 	struct bch_fs *c = ctxt->trans->c;
 	u64 delay;
 
-	if (ctxt->wait_on_copygc && !c->copygc_running) {
+	if (ctxt->wait_on_copygc && c->copygc_running) {
 		move_ctxt_wait_event(ctxt, !c->copygc_running || kthread_should_stop());
 		wait_event_killable(c->copygc_running_wq,
 				    !c->copygc_running ||
