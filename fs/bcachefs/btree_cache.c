@@ -526,7 +526,7 @@ int bch2_fs_btree_cache_init(struct bch_fs *c)
 	shrink->count_objects	= bch2_btree_cache_count;
 	shrink->scan_objects	= bch2_btree_cache_scan;
 	shrink->to_text		= bch2_btree_cache_shrinker_to_text;
-	shrink->seeks		= 4;
+	shrink->seeks		= DEFAULT_SEEKS;
 	shrink->private_data	= c;
 	shrinker_register(shrink);
 
