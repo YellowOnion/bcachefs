@@ -543,6 +543,11 @@ int bch2_data_update_init(struct btree_trans *trans,
 
 	BUG_ON(!m->op.nr_replicas);
 
+	trace_move_data_update_init(m->op.nr_replicas,
+		   m->data_opts.extra_replicas,
+		   ptrs_locked,
+		   i);
+
 	/* Special handling required: */
 	if (bkey_extent_is_unwritten(k))
 		return -BCH_ERR_unwritten_extent_update;

@@ -811,6 +811,31 @@ TRACE_EVENT(move_data,
 		  __entry->sectors_raced)
 );
 
+TRACE_EVENT(move_data_update_init,
+	     TP_PROTO(u32 nr_replicas,
+		     u8 extra_replicas,
+		     u32 ptrs_locked,
+		     u32 locked),
+	     TP_ARGS(nr_replicas, extra_replicas, ptrs_locked, locked),
+	     TP_STRUCT__entry(
+		     __field(u32, nr_replicas)
+		     __field(u8, extra_replicas)
+		     __field(u32, ptrs_locked)
+		     __field(u32, locked)
+),
+	     TP_fast_assign(
+		     __entry->nr_replicas    = nr_replicas;
+		     __entry->extra_replicas = nr_replicas;
+		     __entry->ptrs_locked    = ptrs_locked;
+		     __entry->locked         = locked;
+),
+	     TP_printk("nr_replicas %u, extra_replicas %u, ptrs_locked %u, locks %u",
+		   __entry->nr_replicas,
+		   __entry->extra_replicas,
+		   hweight32(__entry->ptrs_locked),
+		      __entry->locked)
+);
+
 TRACE_EVENT(evacuate_bucket,
 	TP_PROTO(struct bch_fs *c, struct bpos *bucket,
 		 unsigned sectors, unsigned bucket_size,
