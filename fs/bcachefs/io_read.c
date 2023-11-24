@@ -218,6 +218,10 @@ static struct promote_op *__promote_alloc(struct btree_trans *trans,
 				.write_flags	= BCH_WRITE_ALLOC_NOWAIT|BCH_WRITE_CACHED,
 			},
 			btree_id, k);
+
+	if (ret == -BCH_ERR_unwritten_extent_update)
+		bch2_data_update_exit(&op->write);
+
 	/*
 	 * possible errors: -BCH_ERR_nocow_lock_blocked,
 	 * -BCH_ERR_ENOSPC_disk_reservation:
