@@ -211,6 +211,8 @@ static int bch2_copygc(struct moving_context *ctxt,
 	struct move_bucket_in_flight *f;
 	struct move_bucket *i;
 	u64 moved = atomic64_read(&ctxt->stats->sectors_moved);
+	u64 raced = atomic64_read(&ctxt->stats->sectors_raced);
+	u64 seen = atomic64_read(&ctxt->stats->sectors_seen);
 	int ret = 0;
 
 	ret = bch2_copygc_get_buckets(ctxt, buckets_in_flight, &buckets);
@@ -250,7 +252,9 @@ err:
 		bch_err_msg(c, ret, "from bch2_move_data()");
 
 	moved = atomic64_read(&ctxt->stats->sectors_moved) - moved;
-	trace_and_count(c, copygc, c, moved, 0, 0, 0);
+	seen  = atomic64_read(&ctxt->stats->sectors_seen)  - seen;
+	raced = atomic64_read(&ctxt->stats->sectors_raced) - raced;
+	trace_and_count(c, copygc, c, moved, seen, raced);
 	return ret;
 }
 

@@ -88,6 +88,15 @@ static void trace_move_extent_fail2(struct data_update *m,
 	printbuf_exit(&buf);
 }
 
+static void trace_move_extent_fail3(struct bch_fs *c, const char *msg, int ret)
+{
+	struct printbuf buf = PRINTBUF;
+
+	prt_printf(&buf, "error %s %i", msg, ret);
+	trace_move_extent_fail(c, buf.buf);
+	printbuf_exit(&buf);
+}
+
 static int __bch2_data_update_index_update(struct btree_trans *trans,
 					   struct bch_write_op *op)
 {
@@ -121,13 +130,16 @@ static int __bch2_data_update_index_update(struct btree_trans *trans,
 		bool should_check_enospc;
 		s64 i_sectors_delta = 0, disk_sectors_delta = 0;
 		unsigned rewrites_found = 0, durability, i;
+		const char *msg = "no err";
 
 		bch2_trans_begin(trans);
 
 		k = bch2_btree_iter_peek_slot(&iter);
 		ret = bkey_err(k);
-		if (ret)
+		if (ret) {
+			msg = "peek_slot";
 			goto err;
+		}
 
 		new = bkey_i_to_extent(bch2_keylist_front(keys));
 
@@ -225,16 +237,21 @@ restart_drop_extra_replicas:
 						 &should_check_enospc,
 						 &i_sectors_delta,
 						 &disk_sectors_delta);
-		if (ret)
+		if (ret) {
+			msg = "sum_sectors";
 			goto err;
+		}
+
 
 		if (disk_sectors_delta > (s64) op->res.sectors) {
 			ret = bch2_disk_reservation_add(c, &op->res,
 						disk_sectors_delta - op->res.sectors,
 						!should_check_enospc
 						? BCH_DISK_RESERVATION_NOFAIL : 0);
-			if (ret)
+			if (ret) {
+				trace_move_extent_fail3(c, "disk_reservation_add", ret);
 				goto out;
+			}
 		}
 
 		next_pos = insert->k.p;
@@ -301,11 +318,15 @@ restart_drop_extra_replicas:
 			this_cpu_add(c->counters[BCH_COUNTER_move_extent_finish], new->k.size);
 			trace_move_extent_finish2(c, bkey_i_to_s_c(&new->k_i));
 		}
+
 err:
-		if (bch2_err_matches(ret, BCH_ERR_transaction_restart))
+		if (bch2_err_matches(ret, BCH_ERR_transaction_restart)) {
 			ret = 0;
-		if (ret)
+		}
+		if (ret) {
+			trace_move_extent_fail3(c, msg, ret);
 			break;
+		}
 next:
 		while (bkey_ge(iter.pos, bch2_keylist_front(keys)->k.p)) {
 			bch2_keylist_pop_front(keys);
@@ -370,7 +391,7 @@ void bch2_data_update_exit(struct data_update *update)
 	bch2_bio_free_pages_pool(c, &update->op.wbio.bio);
 }
 
-static void bch2_update_unwritten_extent(struct btree_trans *trans,
+static int bch2_update_unwritten_extent(struct btree_trans *trans,
 				  struct data_update *update)
 {
 	struct bch_fs *c = update->op.c;
@@ -381,7 +402,8 @@ static void bch2_update_unwritten_extent(struct btree_trans *trans,
 	struct closure cl;
 	struct btree_iter iter;
 	struct bkey_s_c k;
-	int ret;
+	int ret = 0;
+	const char *msg = "";
 
 	closure_init_stack(&cl);
 	bch2_keylist_init(&update->op.insert_keys, update->op.inline_keys);
@@ -397,8 +419,12 @@ static void bch2_update_unwritten_extent(struct btree_trans *trans,
 		}));
 		bch2_trans_iter_exit(trans, &iter);
 
-		if (ret || !bch2_extents_match(k, bkey_i_to_s_c(update->k.k)))
+		if (ret)
 			break;
+		if(!bch2_extents_match(k, bkey_i_to_s_c(update->k.k))) {
+			msg = "extent doesn't match ";
+			goto err;
+		}
 
 		e = bkey_extent_init(update->op.insert_keys.top);
 		e->k.p = update->op.pos;
@@ -418,8 +444,14 @@ static void bch2_update_unwritten_extent(struct btree_trans *trans,
 			continue;
 		}
 
-		if (ret)
-			return;
+		if (ret) {
+			const char *estr = bch2_err_str(ret);
+			struct printbuf buf = PRINTBUF;
+			prt_printf(&buf, "alloc_sectors_start err %s", estr);
+			trace_update_unwritten_extent(c, buf.buf);
+			printbuf_exit(&buf);
+			return ret;
+		}
 
 		sectors = min(sectors, wp->sectors_free);
 
@@ -443,11 +475,19 @@ static void bch2_update_unwritten_extent(struct btree_trans *trans,
 		if (ret)
 			break;
 	}
-
+err:
 	if (closure_nr_remaining(&cl) != 1) {
 		bch2_trans_unlock(trans);
 		closure_sync(&cl);
 	}
+
+	const char *estr = bch2_err_str(ret);
+	struct printbuf buf = PRINTBUF;
+	prt_printf(&buf, "%serr: %s", msg, estr);
+	trace_update_unwritten_extent(c, buf.buf);
+	printbuf_exit(&buf);
+
+	return ret;
 }
 
 int bch2_extent_drop_ptrs(struct btree_trans *trans,
@@ -625,7 +665,7 @@ int bch2_data_update_init(struct btree_trans *trans,
 	}
 
 	if (bkey_extent_is_unwritten(k)) {
-		bch2_update_unwritten_extent(trans, m);
+		ret = bch2_update_unwritten_extent(trans, m);
 		goto done;
 	}
 
