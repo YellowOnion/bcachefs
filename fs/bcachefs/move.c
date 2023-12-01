@@ -265,6 +265,12 @@ int bch2_move_extent(struct moving_context *ctxt,
 
 	if (!data_opts.rewrite_ptrs &&
 	    !data_opts.extra_replicas) {
+		struct printbuf buf = PRINTBUF;
+
+		prt_printf(&buf, "drop ptrs or ret 0");
+		trace_move_extent_finish(c, buf.buf);
+
+		printbuf_exit(&buf);
 		if (data_opts.kill_ptrs)
 			return bch2_extent_drop_ptrs(trans, iter, k, data_opts);
 		return 0;
@@ -358,12 +364,23 @@ err_free_pages:
 err_free:
 	kfree(io);
 err:
-	if (ret == -BCH_ERR_data_update_done)
-		return 0;
+	if (ret == -BCH_ERR_data_update_done) {
+		struct printbuf buf = PRINTBUF;
 
-	if (bch2_err_matches(ret, EROFS) ||
-	    bch2_err_matches(ret, BCH_ERR_transaction_restart))
+		bch2_bkey_val_to_text(&buf, c, k);
+		prt_str(&buf, ": ");
+		prt_str(&buf, bch2_err_str(ret));
+		trace_move_extent_finish(c, buf.buf);
+		printbuf_exit(&buf);
+		return 0;
+	}
+
+	if (bch2_err_matches(ret, EROFS))
 		return ret;
+	if (bch2_err_matches(ret, BCH_ERR_transaction_restart)) {
+		trace_move_extent_finish(c, "BCH_ERR_transanction_restart");
+		return ret;
+	}
 
 	count_event(c, move_extent_start_fail);
 

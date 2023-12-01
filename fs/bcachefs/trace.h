@@ -802,6 +802,11 @@ DEFINE_EVENT(fs_str, move_extent_fail,
 	TP_ARGS(c, str)
 );
 
+DEFINE_EVENT(fs_str, update_unwritten_extent,
+	     TP_PROTO(struct bch_fs *c, const char *k),
+	     TP_ARGS(c, k)
+);
+
 DEFINE_EVENT(fs_str, move_extent_start_fail,
 	TP_PROTO(struct bch_fs *c, const char *str),
 	TP_ARGS(c, str)
