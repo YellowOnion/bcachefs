@@ -173,6 +173,11 @@ struct btree_cache {
 	 */
 	struct task_struct	*alloc_lock;
 	struct closure_waitlist	alloc_wait;
+
+#ifdef CONFIG_BCACHEFS_DEBUG
+	u64 __percpu *hits;
+	atomic64_t misses;
+#endif
 };
 
 struct btree_node_iter {

@@ -405,6 +405,10 @@ void bch2_fs_btree_cache_exit(struct bch_fs *c)
 	flags = memalloc_nofs_save();
 	mutex_lock(&bc->lock);
 
+#ifdef CONFIG_BCACHEFS_DEBUG
+	free_percpu(bc->hits);
+#endif
+
 	if (c->verify_data)
 		list_move(&c->verify_data->list, &bc->live);
 
@@ -453,6 +457,12 @@ int bch2_fs_btree_cache_init(struct bch_fs *c)
 	struct shrinker *shrink;
 	unsigned i;
 	int ret = 0;
+
+#ifdef CONFIG_BCACHEFS_DEBUG
+	bc->hits = alloc_percpu(*bc->hits);
+	if (!bc->hits)
+		goto err;
+#endif
 
 	ret = rhashtable_init(&bc->table, &bch_btree_cache_params);
 	if (ret)
@@ -925,6 +935,13 @@ retry:
 	EBUG_ON(BTREE_NODE_LEVEL(b->data) != level);
 	btree_check_header(c, b);
 
+#ifdef CONFIG_BCACHEFS_DEBUG
+	if (is_hit)
+		this_cpu_inc(*bc->hits);
+	else
+		atomic64_inc(&bc->misses);
+#endif
+
 	return b;
 }
 
@@ -1101,6 +1118,13 @@ lock_node:
 	EBUG_ON(BTREE_NODE_LEVEL(b->data) != level);
 	btree_check_header(c, b);
 out:
+#ifdef CONFIG_BCACHEFS_DEBUG
+	if (is_hit)
+		this_cpu_inc(*bc->hits);
+	else
+		atomic64_inc(&bc->misses);
+#endif
+
 	bch2_btree_cache_cannibalize_unlock(trans);
 	return b;
 }
@@ -1228,4 +1252,15 @@ void bch2_btree_cache_to_text(struct printbuf *out, const struct bch_fs *c)
 	prt_printf(out, "nr nodes:\t\t%u\n", c->btree_cache.used);
 	prt_printf(out, "nr dirty:\t\t%u\n", atomic_read(&c->btree_cache.dirty));
 	prt_printf(out, "cannibalize lock:\t%p\n", c->btree_cache.alloc_lock);
+
+#ifdef CONFIG_BCACHEFS_DEBUG
+	u64 hits = percpu_u64_get(c->btree_cache.hits);
+	u64 misses = atomic64_read(&c->btree_cache.misses);
+	u64 total = hits + misses;
+
+	u64 rem;
+	u64 percent = div64_u64_rem(hits * 100, total, &rem);
+
+	prt_printf(out, "hits %llu.%llu%%", percent, div64_u64(rem * 10, total));
+#endif
 }
