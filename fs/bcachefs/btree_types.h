@@ -471,7 +471,8 @@ enum btree_write_type {
 	x(dying)							\
 	x(fake)								\
 	x(need_rewrite)							\
-	x(never_write)
+	x(never_write)							\
+	x(just_prefetched)
 
 enum btree_flags {
 	/* First bits for btree node write type */

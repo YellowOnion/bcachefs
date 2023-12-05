@@ -822,6 +822,7 @@ static struct btree *__bch2_btree_node_get(struct btree_trans *trans, struct btr
 	struct btree *b;
 	struct bset_tree *t;
 	bool need_relock = false;
+	bool is_hit = true;
 	int ret;
 
 	EBUG_ON(level >= BTREE_MAX_DEPTH);
@@ -840,6 +841,8 @@ retry:
 		/* We raced and found the btree node in the cache */
 		if (!b)
 			goto retry;
+
+		is_hit = false;
 
 		if (IS_ERR(b))
 			return b;
@@ -865,9 +868,17 @@ retry:
 		}
 
 		/* avoid atomic set bit if it's not needed: */
-		if (!btree_node_accessed(b))
+		if (unlikely(!btree_node_accessed(b) &&
+		    !btree_node_just_prefetched(b))) // ignore just prefetched nodes
 			set_btree_node_accessed(b);
 	}
+
+	/* let cache_scan remove leaves first */
+	if (unlikely(level < BTREE_MAX_DEPTH / 2 && !btree_node_accessed(b)))
+		set_btree_node_accessed(b);
+
+	if (unlikely(btree_node_just_prefetched(b)))
+		clear_btree_node_just_prefetched(b);
 
 	if (unlikely(btree_node_read_in_flight(b))) {
 		u32 seq = six_lock_seq(&b->c.lock);
@@ -1014,6 +1025,7 @@ struct btree *bch2_btree_node_get_noiter(struct btree_trans *trans,
 	struct btree_cache *bc = &c->btree_cache;
 	struct btree *b;
 	struct bset_tree *t;
+	bool is_hit = true;
 	int ret;
 
 	EBUG_ON(level >= BTREE_MAX_DEPTH);
@@ -1039,6 +1051,8 @@ retry:
 		if (IS_ERR(b) &&
 		    !bch2_btree_cache_cannibalize_lock(trans, NULL))
 			goto retry;
+
+		is_hit = false;
 
 		if (IS_ERR(b))
 			goto out;
@@ -1072,7 +1086,9 @@ lock_node:
 	}
 
 	/* avoid atomic set bit if it's not needed: */
-	if (!btree_node_accessed(b))
+	if (unlikely(!btree_node_accessed(b) &&
+		     (!btree_node_just_prefetched(b) ||
+		      is_hit)))
 		set_btree_node_accessed(b);
 
 	if (unlikely(btree_node_read_error(b))) {
@@ -1107,6 +1123,8 @@ int bch2_btree_node_prefetch(struct btree_trans *trans,
 
 	b = bch2_btree_node_fill(trans, path, k, btree_id,
 				 level, SIX_LOCK_read, false);
+	if (b > 0)
+		set_btree_node_just_prefetched(b);
 	return PTR_ERR_OR_ZERO(b);
 }
 
