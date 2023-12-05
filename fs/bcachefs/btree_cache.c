@@ -992,10 +992,6 @@ struct btree *bch2_btree_node_get(struct btree_trans *trans, struct btree_path *
 		prefetch(p + L1_CACHE_BYTES * 2);
 	}
 
-	/* avoid atomic set bit if it's not needed: */
-	if (!btree_node_accessed(b))
-		set_btree_node_accessed(b);
-
 	if (unlikely(btree_node_read_error(b))) {
 		six_unlock_type(&b->c.lock, lock_type);
 		return ERR_PTR(-EIO);
