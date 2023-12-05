@@ -839,6 +839,7 @@ static unsigned long bch2_btree_key_cache_scan(struct shrinker *shrink,
 	struct bucket_table *tbl;
 	struct bkey_cached *ck, *t;
 	size_t scanned = 0, freed = 0, nr = sc->nr_to_scan;
+	long shrinker_skipped = 0;
 	unsigned start, flags;
 	int srcu_idx;
 
@@ -901,14 +902,19 @@ static unsigned long bch2_btree_key_cache_scan(struct shrinker *shrink,
 			next = rht_dereference_bucket_rcu(pos->next, tbl, bc->shrink_iter);
 			ck = container_of(pos, struct bkey_cached, hash);
 
-			if (test_bit(BKEY_CACHED_DIRTY, &ck->flags))
+			if (test_bit(BKEY_CACHED_DIRTY, &ck->flags)) {
+				shrinker_skipped++;
 				goto next;
+			}
 
-			if (test_bit(BKEY_CACHED_ACCESSED, &ck->flags))
+			if (test_bit(BKEY_CACHED_ACCESSED, &ck->flags)) {
 				clear_bit(BKEY_CACHED_ACCESSED, &ck->flags);
+				shrinker_skipped++;
+			}
 			else if (bkey_cached_lock_for_evict(ck)) {
 				bkey_cached_evict(bc, ck);
 				bkey_cached_free(bc, ck);
+
 			}
 
 			scanned++;
@@ -925,6 +931,10 @@ next:
 
 	rcu_read_unlock();
 out:
+	atomic_long_inc(&bc->shrinker_count);
+	atomic_long_add(nr, &bc->shrinker_to_scan);
+	atomic_long_add(freed, &bc->shrinker_freed);
+	atomic_long_add(shrinker_skipped, &bc->shrinker_skipped);
 	memalloc_nofs_restore(flags);
 	srcu_read_unlock(&c->btree_trans_barrier, srcu_idx);
 	mutex_unlock(&bc->lock);
@@ -1061,6 +1071,14 @@ void bch2_btree_key_cache_to_text(struct printbuf *out, struct btree_key_cache *
 	prt_printf(out, "nr_keys:\t%lu",	atomic_long_read(&c->nr_keys));
 	prt_newline(out);
 	prt_printf(out, "nr_dirty:\t%lu",	atomic_long_read(&c->nr_dirty));
+	prt_newline(out);
+	prt_printf(out, "shrinker_count:\t%lu",	atomic_long_read(&c->shrinker_count));
+	prt_newline(out);
+	prt_printf(out, "shrinker_to_scan:\t%lu",	atomic_long_read(&c->shrinker_to_scan));
+	prt_newline(out);
+	prt_printf(out, "shrinker_freed:\t%lu",	atomic_long_read(&c->shrinker_freed));
+	prt_newline(out);
+	prt_printf(out, "shrinker_skipped:\t%lu",	atomic_long_read(&c->shrinker_skipped));
 	prt_newline(out);
 }
 
