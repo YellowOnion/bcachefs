@@ -756,7 +756,7 @@ TRACE_EVENT(bucket_invalidate,
 
 /* Moving IO */
 
-TRACE_EVENT(bucket_evacuate,
+TRACE_EVENT(evacuate_bucket_start,
 	TP_PROTO(struct bch_fs *c, struct bpos *bucket),
 	TP_ARGS(c, bucket),
 
@@ -775,6 +775,11 @@ TRACE_EVENT(bucket_evacuate,
 	TP_printk("%d:%d %u:%llu",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
 		  __entry->dev_idx, __entry->bucket)
+);
+
+DEFINE_EVENT(fs_str, evacuate_bucket_fail,
+	     TP_PROTO(struct bch_fs *c, const char *k),
+	     TP_ARGS(c, k)
 );
 
 DEFINE_EVENT(fs_str, move_extent,
@@ -845,16 +850,18 @@ TRACE_EVENT(move_data,
 		  __entry->sectors_raced)
 );
 
-TRACE_EVENT(evacuate_bucket,
+TRACE_EVENT(evacuate_bucket_finish,
 	TP_PROTO(struct bch_fs *c, struct bpos *bucket,
+		 u8 gen,
 		 unsigned sectors, unsigned bucket_size,
 		 u64 fragmentation, int ret),
-	TP_ARGS(c, bucket, sectors, bucket_size, fragmentation, ret),
+	TP_ARGS(c, bucket, gen, sectors, bucket_size, fragmentation, ret),
 
 	TP_STRUCT__entry(
 		__field(dev_t,		dev		)
 		__field(u64,		member		)
 		__field(u64,		bucket		)
+		__field(u8,		gen		)
 		__field(u32,		sectors		)
 		__field(u32,		bucket_size	)
 		__field(u64,		fragmentation	)
@@ -865,15 +872,16 @@ TRACE_EVENT(evacuate_bucket,
 		__entry->dev			= c->dev;
 		__entry->member			= bucket->inode;
 		__entry->bucket			= bucket->offset;
+		__entry->gen			= gen;
 		__entry->sectors		= sectors;
 		__entry->bucket_size		= bucket_size;
 		__entry->fragmentation		= fragmentation;
 		__entry->ret			= ret;
 	),
 
-	TP_printk("%d,%d %llu:%llu sectors %u/%u fragmentation %llu ret %i",
+	TP_printk("%d,%d %llu:%llu gen %u sectors %u/%u fragmentation %llu ret %i",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
-		  __entry->member, __entry->bucket,
+		  __entry->member, __entry->bucket, __entry->gen,
 		  __entry->sectors, __entry->bucket_size,
 		  __entry->fragmentation, __entry->ret)
 );

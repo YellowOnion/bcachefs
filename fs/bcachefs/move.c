@@ -682,12 +682,13 @@ int bch2_evacuate_bucket(struct moving_context *ctxt,
 	u64 fragmentation;
 	struct bpos bp_pos = POS_MIN;
 	int ret = 0;
+	struct printbuf buf = PRINTBUF;
 
 	struct bch_dev *ca = bch2_dev_tryget(c, bucket.inode);
 	if (!ca)
 		return 0;
 
-	trace_bucket_evacuate(c, &bucket);
+	trace_evacuate_bucket_start(c, &bucket);
 
 	bch2_bkey_buf_init(&sk);
 
@@ -818,9 +819,15 @@ next:
 		bp_pos = bpos_nosnap_successor(bp_pos);
 	}
 
-	trace_evacuate_bucket(c, &bucket, dirty_sectors, bucket_size, fragmentation, ret);
+	trace_evacuate_bucket_finish(c, &bucket, gen, dirty_sectors,
+				     bucket_size, fragmentation, ret);
+	goto exit;
 err:
+	prt_printf(&buf, "%llu:%llu ret %s", bucket.inode, bucket.offset, bch2_err_str(ret));
+	trace_evacuate_bucket_fail(c, buf.buf);
+exit:
 	bch2_dev_put(ca);
+	printbuf_exit(&buf);
 	bch2_bkey_buf_exit(&sk, c);
 	return ret;
 }
