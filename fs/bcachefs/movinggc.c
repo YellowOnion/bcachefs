@@ -142,7 +142,7 @@ typedef DARRAY(struct move_bucket) move_buckets;
 
 static int bch2_copygc_get_buckets(struct moving_context *ctxt,
 			struct buckets_in_flight *buckets_in_flight,
-			move_buckets *buckets)
+			move_buckets *move_buckets)
 {
 	struct btree_trans *trans = ctxt->trans;
 	struct bch_fs *c = trans->c;
@@ -179,19 +179,19 @@ static int bch2_copygc_get_buckets(struct moving_context *ctxt,
 		else if (bucket_in_flight(buckets_in_flight, b.k))
 			in_flight++;
 		else {
-			ret2 = darray_push(buckets, b);
+			ret2 = darray_push(move_buckets, b);
 			if (ret2)
 				goto err;
 			sectors += b.sectors;
 		}
 
-		ret2 = buckets->nr >= nr_to_get;
+		ret2 = move_buckets->nr >= nr_to_get;
 err:
 		ret2;
 	}));
 
 	trace_copygc_get_buckets(c, buckets_in_flight->nr, nr_to_get, saw,
-				 not_movable, in_flight, buckets->nr, ret);
+				 not_movable, in_flight, move_buckets->nr, ret);
 
 	return ret < 0 ? ret : 0;
 }
@@ -206,18 +206,18 @@ static int bch2_copygc(struct moving_context *ctxt,
 	struct data_update_opts data_opts = {
 		.btree_insert_flags = BCH_WATERMARK_copygc,
 	};
-	move_buckets buckets = { 0 };
+	move_buckets move_buckets = { 0 };
 	struct move_bucket_in_flight *f;
 	u64 moved = atomic64_read(&ctxt->stats->sectors_moved);
 	u64 raced = atomic64_read(&ctxt->stats->sectors_raced);
 	u64 seen = atomic64_read(&ctxt->stats->sectors_seen);
 	int ret = 0;
 
-	ret = bch2_copygc_get_buckets(ctxt, buckets_in_flight, &buckets);
+	ret = bch2_copygc_get_buckets(ctxt, buckets_in_flight, &move_buckets);
 	if (ret)
 		goto err;
 
-	darray_for_each(buckets, i) {
+	darray_for_each(move_buckets, i) {
 		if (kthread_should_stop() || freezing(current))
 			break;
 
@@ -240,7 +240,7 @@ static int bch2_copygc(struct moving_context *ctxt,
 		*did_work = true;
 	}
 err:
-	darray_exit(&buckets);
+	darray_exit(&move_buckets);
 
 	/* no entries in LRU btree found, or got to end: */
 	if (bch2_err_matches(ret, ENOENT))
@@ -320,17 +320,17 @@ static int bch2_copygc_thread(void *arg)
 	struct moving_context ctxt;
 	struct bch_move_stats move_stats;
 	struct io_clock *clock = &c->io_clock[WRITE];
-	struct buckets_in_flight *buckets;
+	struct buckets_in_flight *buckets_in_flight;
 	u64 last, wait;
 	int ret = 0;
 
-	buckets = kzalloc(sizeof(struct buckets_in_flight), GFP_KERNEL);
-	if (!buckets)
+	buckets_in_flight = kzalloc(sizeof(struct buckets_in_flight), GFP_KERNEL);
+	if (!buckets_in_flight)
 		return -ENOMEM;
-	ret = rhashtable_init(&buckets->table, &bch_move_bucket_params);
+	ret = rhashtable_init(&buckets_in_flight->table, &bch_move_bucket_params);
 	bch_err_msg(c, ret, "allocating copygc buckets in flight");
 	if (ret) {
-		kfree(buckets);
+		kfree(buckets_in_flight);
 		return ret;
 	}
 
@@ -348,13 +348,13 @@ static int bch2_copygc_thread(void *arg)
 		cond_resched();
 
 		if (!c->copy_gc_enabled) {
-			move_buckets_wait(&ctxt, buckets, true);
+			move_buckets_wait(&ctxt, buckets_in_flight, true);
 			kthread_wait_freezable(c->copy_gc_enabled ||
 					       kthread_should_stop());
 		}
 
 		if (unlikely(freezing(current))) {
-			move_buckets_wait(&ctxt, buckets, true);
+			move_buckets_wait(&ctxt, buckets_in_flight, true);
 			__refrigerator(false);
 			continue;
 		}
@@ -365,8 +365,8 @@ static int bch2_copygc_thread(void *arg)
 		if (wait > clock->max_slop) {
 			c->copygc_wait_at = last;
 			c->copygc_wait = last + wait;
-			move_buckets_wait(&ctxt, buckets, true);
-			trace_and_count(c, copygc_wait, c, wait, last + wait);
+			move_buckets_wait(&ctxt, buckets_in_flight, true);
+			trace_and_count(c, copygc_wait, c, wait, c->copygc_wait);
 			bch2_kthread_io_clock_wait(clock, last + wait,
 					MAX_SCHEDULE_TIMEOUT);
 			continue;
@@ -375,7 +375,7 @@ static int bch2_copygc_thread(void *arg)
 		c->copygc_wait = 0;
 
 		c->copygc_running = true;
-		ret = bch2_copygc(&ctxt, buckets, &did_work);
+		ret = bch2_copygc(&ctxt, buckets_in_flight, &did_work);
 		c->copygc_running = false;
 
 		wake_up(&c->copygc_running_wq);
@@ -392,10 +392,10 @@ static int bch2_copygc_thread(void *arg)
 		}
 	}
 
-	move_buckets_wait(&ctxt, buckets, true);
+	move_buckets_wait(&ctxt, buckets_in_flight, true);
 
-	rhashtable_destroy(&buckets->table);
-	kfree(buckets);
+	rhashtable_destroy(&buckets_in_flight->table);
+	kfree(buckets_in_flight);
 	bch2_moving_ctxt_exit(&ctxt);
 	bch2_move_stats_exit(&move_stats, c);
 
