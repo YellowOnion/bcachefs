@@ -178,7 +178,7 @@ static int bch2_run_recovery_pass(struct bch_fs *c, enum bch_recovery_pass pass)
 	int ret;
 
 	if (!(p->when & PASS_SILENT))
-		bch2_print(c, KERN_INFO bch2_log_msg(c, "%s..."),
+		bch2_print(c, KERN_INFO bch2_log_msg(c, "%s...\n"),
 			   bch2_recovery_passes[pass]);
 	ret = p->fn(c);
 	if (ret)
